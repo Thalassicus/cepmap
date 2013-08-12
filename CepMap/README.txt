@@ -3,10 +3,10 @@
 
   Created by:
 - Cephalo (Rich Marinaccio)		- Perlin landform, elevation and rainfall creation
-- Sirian (Bob Thomas)			- Island creation, code from Continents and Terra scripts
+- Sirian (Bob Thomas)			- Island creation, some code from Continents and Terra scripts
 - WHoward69						- Mountain-pass finding algorithm
 - Thalassicus (Victor Isbell)	- Ocean rifts, rivers through lakes, natural wonder placement,
-								  resource placement, map options, aesthetic polishing
+								  resource placement, map options, inland seas, aesthetic polishing
 
 
 This map script generates climate based on a simplified model of geostrophic
