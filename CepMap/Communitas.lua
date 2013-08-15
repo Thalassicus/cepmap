@@ -78,7 +78,7 @@ function MapGlobals:New()
 	mglobal.flatPercent				= 0.78 -- Percent of flat land
 	mglobal.hillsBlendPercent		= 0.33 -- Chance for flat land to become hills per near mountain. Requires at least 2 near mountains.
 	mglobal.terrainBlendRange		= 2	   -- range to smooth terrain (desert surrounded by plains turns to plains, etc)
-	mglobal.terrainBlendRandom		= 0.1  -- random modifier for terrain smoothing
+	mglobal.terrainBlendRandom		= 0.5  -- random modifier for terrain smoothing
 
 	
 	-- Features
@@ -2086,8 +2086,9 @@ function BlendTerrain()
 	for plotID, plot in Plots(Shuffle) do
 		if not plot:IsWater() then
 			local plotTerrainID = plot:GetTerrainType()
+			local plotFeatureID = plot:GetTerrainType()
 			local plotPercent = Plot_GetCirclePercents(plot, 1, mg.terrainBlendRange)
-			local randPercent = 2 * mg.terrainBlendRandom * PWRand() - mg.terrainBlendRandom
+			local randPercent = 1 + PWRand() * 2 * mg.terrainBlendRandom - mg.terrainBlendRandom
 			if plot:IsMountain() then
 				-- minimize necessary pathfinding
 				local numNearMountains = 0
@@ -2103,24 +2104,28 @@ function BlendTerrain()
 				if debugTime then mountainCheckTime = mountainCheckTime + (os.clock() - timeStart) end
 			else
 				if plotTerrainID == TerrainTypes.TERRAIN_GRASS then
-					if plotPercent.TERRAIN_DESERT + plotPercent.TERRAIN_SNOW >= 0.33 + randPercent then
+					if plotPercent.TERRAIN_DESERT + plotPercent.TERRAIN_SNOW >= 0.33 * randPercent then
 						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
 						if plot:GetFeatureType() == FeatureTypes.FEATURE_MARSH then
 							plot:SetFeatureType(FeatureTypes.FEATURE_FOREST, -1)
 						end
 					end
 				elseif plotTerrainID == TerrainTypes.TERRAIN_PLAINS then
-					if plotPercent.TERRAIN_DESERT >= 0.5 + randPercent then
+					if plotPercent.TERRAIN_DESERT >= 0.5 * randPercent then
 						--plot:SetTerrainType(TerrainTypes.TERRAIN_DESERT, false, false)
 					end
 				elseif plotTerrainID == TerrainTypes.TERRAIN_DESERT then
-					if plotPercent.TERRAIN_GRASS + plotPercent.TERRAIN_SNOW >= 0.25 + randPercent then
+					if plotPercent.TERRAIN_GRASS + plotPercent.TERRAIN_SNOW >= 0.25 * randPercent then
 						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
-					elseif plotPercent.FEATURE_JUNGLE + plotPercent.FEATURE_MARSH >= 0.25 + randPercent then
+					elseif plotPercent.FEATURE_JUNGLE + plotPercent.FEATURE_MARSH >= 0.25 * randPercent then
 						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
 					end
+				elseif plotFeatureID == FeatureTypes.FEATURE_JUNGLE or plotFeatureID == FeatureTypes.FEATURE_MARSH then
+					if plotPercent.TERRAIN_SNOW + plotPercent.TERRAIN_TUNDRA + plotPercent.TERRAIN_DESERT >= 0.25 * randPercent then
+						plot:SetFeatureType(FeatureTypes.NO_FEATURE, -1)
+					end
 				elseif plotTerrainID == TerrainTypes.TERRAIN_TUNDRA then
-					if 2 * plotPercent.TERRAIN_GRASS + plotPercent.TERRAIN_PLAINS + plotPercent.TERRAIN_DESERT >= 0.5 + randPercent then
+					if 2 * plotPercent.TERRAIN_GRASS + plotPercent.TERRAIN_PLAINS + plotPercent.TERRAIN_DESERT >= 0.5 * randPercent then
 						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
 					end
 				end
@@ -2128,9 +2133,9 @@ function BlendTerrain()
 			if plotTerrainID == TerrainTypes.TERRAIN_SNOW then
 				local isMountain = plot:IsMountain()
 				local warmCount = 2 * plotPercent.FEATURE_JUNGLE + 2 * plotPercent.FEATURE_MARSH + plotPercent.TERRAIN_GRASS + plotPercent.TERRAIN_DESERT + 0.5 * plotPercent.TERRAIN_PLAINS
-				if warmCount >= 0.25 + randPercent then
+				if warmCount >= 0.25 * randPercent then
 					plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
-				elseif warmCount >= 0.10 + randPercent or plot:IsFreshWater() then
+				elseif warmCount >= 0.10 * randPercent or plot:IsFreshWater() then
 					plot:SetTerrainType(TerrainTypes.TERRAIN_TUNDRA, false, false)
 				end
 				if isMountain then
