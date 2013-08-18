@@ -6,6 +6,7 @@
 - Cephalo (Rich Marinaccio)		- Perlin landform, elevation and rainfall creation
 - Sirian (Bob Thomas)			- Island creation, some code from Continents and Terra scripts
 - WHoward69						- Mountain-pass finding algorithm
+- Bobert13						- Some code fixes and optimizations
 - Thalassicus (Victor Isbell)	- Ocean rifts, rivers through lakes, natural wonder placement,
 								  resource placement, map options, inland seas, aesthetic polishing
 
@@ -31,6 +32,7 @@ MapGlobals = {}
 
 local debugTime = false
 local debugPrint = false
+local debugWithLogger = false
 
 
 
@@ -63,12 +65,17 @@ function MapGlobals:New()
 	mglobal.polarFrontLatitude		= 60	-- bottomLatitude to polarFrontLatitude : snow, tundra
 	
 	
-	-- Controls the scale of global map patterns like continents
-	-- higher numbers create more random terrain, lower more predictable
-	mglobal.twistMinFreq			= 0.02
-	mglobal.twistMaxFreq			= 0.12
-	mglobal.twistVar				= 0.042
-	mglobal.mountainFreq			= 0.078
+	--Adjusting these will generate larger or smaller landmasses and features.
+	mglobal.landMinScatter			= 0.02 	--Recommended range:[0.02 to 0.1]
+	mglobal.landMaxScatter			= 0.12	--Recommended range:[0.03 to 0.3]
+											--Higher values makes continental divisions and stringy features more likely,
+											--and very high values result in a lot of stringy continents and islands.
+											
+	mglobal.coastScatter			= 0.14 	--Recommended range:[0.01 to 0.3]
+											--Higher values result in more islands and variance on landmasses and coastlines.
+											
+	mglobal.mountainScatter			= 0.12 	--Recommended range:[0.1 to 0.8]
+											--Lower values make large, long, mountain ranges. Higher values make sporadic mountainous features.
 	
 	
 	-- Terrain
@@ -159,19 +166,19 @@ function MapGlobals:New()
 	if oWorldAge == 1 then
 		print("Map Age:  New")
 		mglobal.belowMountainPercent	= 1 - (1 - mglobal.belowMountainPercent) * 1.5
-		mglobal.flatPercent		= 1 - (1 - mglobal.flatPercent) * 1.5
-		mglobal.twistMinFreq		= mglobal.twistMinFreq	/ 1.5
-		mglobal.twistMaxFreq		= mglobal.twistMaxFreq	/ 1.5
-		mglobal.twistVar			= mglobal.twistVar		/ 1.5
-		mglobal.mountainFreq		= mglobal.mountainFreq
+		mglobal.flatPercent			= 1 - (1 - mglobal.flatPercent) * 1.5
+		mglobal.landMinScatter		= mglobal.landMinScatter	/ 1.5
+		mglobal.landMaxScatter		= mglobal.landMaxScatter	/ 1.5
+		mglobal.coastScatter		= mglobal.coastScatter		/ 1.5
+		mglobal.mountainScatter		= mglobal.mountainScatter
 	elseif oWorldAge == 3 then
 		print("Map Age:  Old")
 		mglobal.belowMountainPercent	= 1 - (1 - mglobal.belowMountainPercent) / 1.5
-		mglobal.flatPercent		= 1 - (1 - mglobal.flatPercent) / 1.5
-		mglobal.twistMinFreq		= mglobal.twistMinFreq	* 1.5
-		mglobal.twistMaxFreq		= mglobal.twistMaxFreq	* 1.5
-		mglobal.twistVar			= mglobal.twistVar		* 1.5
-		mglobal.mountainFreq		= mglobal.mountainFreq
+		mglobal.flatPercent			= 1 - (1 - mglobal.flatPercent) / 1.5
+		mglobal.landMinScatter		= mglobal.landMinScatter	* 1.5
+		mglobal.landMaxScatter		= mglobal.landMaxScatter	* 1.5
+		mglobal.coastScatter		= mglobal.coastScatter		* 1.5
+		mglobal.mountainScatter		= mglobal.mountainScatter
 	else
 		print("Map Age:  Normal")
 	end
@@ -256,18 +263,18 @@ function MapGlobals:New()
 	local oRiftWidth = Map.GetCustomOption(8)
 	if oRiftWidth == 1 then
 		print("Map Ocean Width: Narrow")
-		mglobal.oceanRiftWidth = 1 / 1.5
+		mglobal.oceanRiftWidth = mglobal.oceanRiftWidth / 2
 	elseif oRiftWidth == 3 then
 		print("Map Ocean Width: Wide")
-		mglobal.oceanRiftWidth = 1 * 1.5
+		mglobal.oceanRiftWidth = mglobal.oceanRiftWidth * 2
 	end	
 	mglobal.oceanRiftWidth	= mglobal.oceanRiftWidth * mapW	
 	
 	-- Ocean rift sizes
-	mglobal.pacificSize		= 1									-- size near poles
+	mglobal.pacificSize		= 1										-- size near poles
 	mglobal.pacificBulge	= Round(mglobal.oceanRiftWidth * 3)		-- size increase at equator
 	mglobal.atlanticSize	= Round(mglobal.oceanRiftWidth * 0.5)	-- size near poles
-	mglobal.atlanticBulge	= 0									-- size increase at equator
+	mglobal.atlanticBulge	= 0										-- size increase at equator
 	
 	mglobal.oceanRiftWidth	= Round(mglobal.oceanRiftWidth)
 	
@@ -437,33 +444,6 @@ function MapGlobals:New()
 							  DirectionTypes.DIRECTION_SOUTHWEST, DirectionTypes.DIRECTION_WEST, DirectionTypes.DIRECTION_NORTHWEST}
 	
 	
-	--
-	-- Logger
-	--
-	
-	LOG_TRACE	= "TRACE"
-	LOG_DEBUG	= "DEBUG"
-	LOG_INFO	= "INFO"
-	LOG_WARN	= "WARN"
-	LOG_ERROR	= "ERROR"
-	LOG_FATAL	= "FATAL"
-
-	LEVEL = {
-		[LOG_TRACE] = 1,
-		[LOG_DEBUG] = 2,
-		[LOG_INFO]  = 3,
-		[LOG_WARN]  = 4,
-		[LOG_ERROR] = 5,
-		[LOG_FATAL] = 6,
-	}
-	
-	Events.LuaLogger = {}
-	Events.LuaLogger.New = Logger
-
-	log = Events.LuaLogger:New()
-	
-	log:SetLevel("INFO")
-	
 	
 	return mglobal
 end
@@ -535,10 +515,10 @@ function GetMapInitData(worldSize)
 		worldsizes = {
 		[GameInfo.Worlds.WORLDSIZE_DUEL.ID] = {44, 26},
 		[GameInfo.Worlds.WORLDSIZE_TINY.ID] = {62, 40},
-		[GameInfo.Worlds.WORLDSIZE_SMALL.ID] = {73, 46},
-		[GameInfo.Worlds.WORLDSIZE_STANDARD.ID] = {88, 57},
+		[GameInfo.Worlds.WORLDSIZE_SMALL.ID] = {74, 46},
+		[GameInfo.Worlds.WORLDSIZE_STANDARD.ID] = {88, 58},
 		[GameInfo.Worlds.WORLDSIZE_LARGE.ID] = {114, 70},
-		[GameInfo.Worlds.WORLDSIZE_HUGE.ID] = {141, 88},
+		[GameInfo.Worlds.WORLDSIZE_HUGE.ID] = {142, 88},
 		}
 	end
 	--
@@ -577,6 +557,7 @@ function DetermineContinents()
 	
 	local mapW, mapH = Map.GetGridSize()
 
+	--[[
  	for i, plot in Plots() do
  		if plot:IsWater() then
  			plot:SetContinentArtType(contArt.OCEAN)
@@ -584,6 +565,7 @@ function DetermineContinents()
  			plot:SetContinentArtType(contArt.AFRICA)
  		end
  	end
+	--]]
 	
 	local continentMap = PWAreaMap:New(elevationMap.width,elevationMap.height,elevationMap.wrapX,elevationMap.wrapY)
 	continentMap:DefineAreas(oceanMatch)
@@ -817,6 +799,85 @@ function inheritsFrom( baseClass )
     return new_class
 end
 
+function Logger(self)
+	local logger = {}
+	setmetatable(logger, self)
+	self.__index = self
+
+	logger.level = LEVEL.INFO
+
+	logger.SetLevel = function (self, level)
+		self.level = level
+	end
+
+	logger.Message = function (self, level, ...)
+		local arg = {...}
+		if LEVEL[level] < LEVEL[self.level] then
+			return false
+		end
+		if type(arg[1]) == "string" then
+			local _, numCommands = string.gsub(arg[1], "[%%]", "")
+			for i = 2, numCommands+1 do
+				if type(arg[i]) ~= "number" and type(arg[i]) ~= "string" then
+					arg[i] = tostring(arg[i])
+				end
+			end
+		else
+			arg[1] = tostring(arg[1])
+		end
+		local message = string.format(unpack(arg))
+		if level == LOG_FATAL then
+			message = string.format("Turn %-3s %s", Game.GetGameTurn(), message)
+			print(level .. string.rep(" ", 7-level:len()) .. message)
+			if debug then print(debug.traceback()) end
+		else
+			if level >= LOG_INFO then
+				message = string.format("Turn %-3s %s", Game.GetGameTurn(), message)
+			end
+			print(level .. string.rep(" ", 7-level:len()) .. message)
+		end
+		return true
+	end
+
+	if debugWithLogger then
+		logger.Trace = function (logger, ...) return logger:Message(LOG_TRACE, unpack{...}) end
+		logger.Debug = function (logger, ...) return logger:Message(LOG_DEBUG, unpack{...}) end
+		logger.Info  = function (logger, ...) return logger:Message(LOG_INFO,  unpack{...}) end
+		logger.Warn  = function (logger, ...) return logger:Message(LOG_WARN,  unpack{...}) end
+		logger.Error = function (logger, ...) return logger:Message(LOG_ERROR, unpack{...}) end
+		logger.Fatal = function (logger, ...) return logger:Message(LOG_FATAL, unpack{...}) end
+	else
+		logger.Trace = function () end
+		logger.Debug = function () end
+		logger.Info  = function () end
+		logger.Warn  = function () end
+		logger.Error = function () end
+		logger.Fatal = function () end
+	end
+	return logger
+end
+
+LOG_TRACE	= "TRACE"
+LOG_DEBUG	= "DEBUG"
+LOG_INFO	= "INFO"
+LOG_WARN	= "WARN"
+LOG_ERROR	= "ERROR"
+LOG_FATAL	= "FATAL"
+
+LEVEL = {
+	[LOG_TRACE] = 1,
+	[LOG_DEBUG] = 2,
+	[LOG_INFO]  = 3,
+	[LOG_WARN]  = 4,
+	[LOG_ERROR] = 5,
+	[LOG_FATAL] = 6,
+}
+
+LuaLogger = {}
+LuaLogger.New = Logger
+
+log = LuaLogger:New()
+log:SetLevel("INFO")
 
 
 
@@ -2426,7 +2487,7 @@ function GetRiftPlots(x, midline, y, direction, size, bulge)
 		local plotID			= Plot_GetID(plot)
 		local radius			= math.max(1, Round((size-1)/2 + bulge/2 * GetBellCurve(y, mapH)))
 		
-		--log:Debug("x=%-3s, y=%-3s radius=%-3s", x, y, radius)
+		log:Trace("x=%-3s, y=%-3s radius=%-3s", x, y, radius)
 		
 		for nearPlot, nearDistance in Plot_GetPlotsInCircle(plot, 0, radius + 2) do
 			if not mg.oceanRiftPlots[nearPlotID] then
@@ -3323,14 +3384,14 @@ end
 
 function GenerateElevationMap(width,height,xWrap,yWrap)
 	local timeStart = debugTime and os.clock() or 0
-	local twistMinFreq = 128/width * mg.twistMinFreq --0.02/128
-	local twistMaxFreq = 128/width * mg.twistMaxFreq --0.12/128
-	local twistVar = 128/width * mg.twistVar --0.042/128
-	local mountainFreq = 128/width * mg.mountainFreq --0.05/128
-	local twistMap = GenerateTwistedPerlinMap(width,height,xWrap,yWrap,twistMinFreq,twistMaxFreq,twistVar)
+	local landMinScatter = 128/width * mg.landMinScatter --0.02/128
+	local landMaxScatter = 128/width * mg.landMaxScatter --0.12/128
+	local coastScatter = 128/width * mg.coastScatter --0.042/128
+	local mountainScatter = 128/width * mg.mountainScatter --0.05/128
+	local twistMap = GenerateTwistedPerlinMap(width,height,xWrap,yWrap,landMinScatter,landMaxScatter,coastScatter)
 	
 	if debugTime then timeStart = os.clock() end
-	local mountainMap = GenerateMountainMap(width,height,xWrap,yWrap,mountainFreq)
+	local mountainMap = GenerateMountainMap(width,height,xWrap,yWrap,mountainScatter)
 	if debugTime then print(string.format("%5s ms, GenerateElevationMap %s", math.floor((os.clock() - timeStart) * 1000), "GenerateMountainMap")) end
 	
 	if debugTime then timeStart = os.clock() end
@@ -3850,63 +3911,105 @@ function Plot_GetPlotsInCircle(plot, minR, maxR)
 	end
 end
 
-function Plot_GetPlotsInCircleSimple(plot, minR, maxR)
-	if not plot then
-		error("plot:Plot_GetPlotsInCircleSimple plot=nil")
-		return
-	end
-	if not maxR then
-		maxR = minR
-		minR = 1
-	end
+function Plot_GetPlotsInCircleFast(x, y, radius)
+	-- assumes X wrap
 	
-	local mapW, mapH	= Map.GetGridSize()
-	local isWrapX		= Map:IsWrapX()
-	local isWrapY		= Map:IsWrapY()
-	local centerX		= plot:GetX()
-	local centerY		= plot:GetY()
+	local plotIDs	= {}
+	local W, H		= Map.GetGridSize()
+	local odd		= y % 2
+	local topY		= radius
+	local bottomY	= radius
+	local currentY	= nil
+	local len		= 1+radius
+	local i			= (y % H) * W + (x % W)
 	
-	leftX	= isWrapX and ((centerX-maxR) % mapW) or Constrain(0, centerX-maxR, mapW-1)
-	rightX	= isWrapX and ((centerX+maxR) % mapW) or Constrain(0, centerX+maxR, mapW-1)
-	bottomY	= isWrapY and ((centerY-maxR) % mapH) or Constrain(0, centerY-maxR, mapH-1)
-	topY	= isWrapY and ((centerY+maxR) % mapH) or Constrain(0, centerY+maxR, mapH-1)
-	
-	local nearX	= leftX
-	local nearY	= bottomY
-	local stepX	= 0
-	local stepY	= 0
-	local rectW	= rightX-leftX 
-	local rectH	= topY-bottomY
-	
-	if rectW < 0 then
-		rectW = rectW + mapW
-	end
-	
-	if rectH < 0 then
-		rectH = rectH + mapH
-	end
-	
-	local plots = {}
-	
-	local nextPlot = Map.GetPlot(nearX, nearY)
-	
-	while (stepY < 1 + rectH) and nextPlot do
-		while (stepX < 1 + rectW) and nextPlot do
-			local plot	= nextPlot
-			
-			nearX		= (nearX + 1) % mapW
-			stepX		= stepX + 1
-			nextPlot	= Map.GetPlot(nearX, nearY)
-			
-			table.insert(plots, plot)
+	--constrain the top of our circle to be on the map
+	if y+radius > H-1 then
+		for r=0,radius,1 do
+			if y+r == H-1 then
+				topY = r
+				break
+			end
 		end
-		nearX		= leftX
-		nearY		= (nearY + 1) % mapH
-		stepX		= 0
-		stepY		= stepY + 1
-		nextPlot	= Map.GetPlot(nearX, nearY)
 	end
-	return plots
+	
+	--constrain the bottom of our circle to be on the map
+	if y-radius < 0 then
+		for r=0,radius,1 do
+			if y-r == 0 then
+				bottomY = r
+				break
+			end
+		end
+	end
+	
+	--adjust starting length, apply the top and bottom limits, and correct odd for the starting point
+	len			= len+(radius-bottomY)
+	currentY	= y - bottomY
+	topY		= y + topY
+	odd			= (odd+bottomY)%2
+	
+	--set starting point
+	if x-(radius-bottomY) - math.floor((bottomY+odd)/2) < 0 then
+		i = i - (W*bottomY) + (W-(radius-bottomY)) - math.floor((bottomY+odd)/2)
+		x = x + (W-(radius-bottomY)) - math.floor((bottomY+odd)/2)
+		-- print(string.format("i for (%d,%d) WOULD have been in outer space. x is (%d,%d) i is (%d)",xx,y,x,y-bottomY,i))
+	else
+		i = i - (W*bottomY) - (radius-bottomY) - math.floor((bottomY+odd)/2)
+		x = x - (radius-bottomY) - math.floor((bottomY+odd)/2)
+	end
+	
+	--cycle through the plot indexes and add them to a table
+	--local str = ""
+	--local iters = 0
+	while currentY <= topY do
+		--insert the start value, scan left to right adding each index in the line to our table
+		--str = str..i..","
+		table.insert(plotIDs,i)
+		local wrapped = false
+		for n=1,len-1,1 do
+			if x ~= (W-1) then
+				i = i + 1
+				x = x + 1
+			else
+				i = i-(W-1)
+				x = 0
+				wrapped = true
+			end
+			--str = str..i..","
+			table.insert(plotIDs,i)
+		end
+		if currentY < y then
+			--move i NW and increment the length to scan
+			if not wrapped then
+				i = i+W-len+odd
+				x = x-len+odd
+			else
+				i = i+W+(W-len+odd)
+				x = x+(W-len+odd)
+			end
+			len = len+1
+		else
+			--move i NE and decrement the length to scan
+			if not wrapped then
+				i = i+W-len+1+odd
+				x = x-len+1+odd
+			else
+				i = i+W+(W-len+1+odd)
+				x = x+(W-len+1+odd)
+			end
+			len = len-1
+		end
+		currentY = currentY+1
+		odd = (odd+1)%2
+		-- iters = iters+1
+		-- if iters > 300 then
+			-- print("infinite loop in GetCircle")
+			-- break
+		-- end
+	end
+	-- print(string.format("added "..str.." to table for circle starting at(%d,%d)",xx,y))
+	return plotIDs
 end
 
 local plotTypeName		= {}-- -1="NO_PLOT"}
@@ -4084,55 +4187,6 @@ end
 --
 -- Utilities
 --
-
-function Logger(self)
-	local logger = {}
-	setmetatable(logger, self)
-	self.__index = self
-
-	logger.level = LEVEL.INFO
-
-	logger.SetLevel = function (self, level)
-		self.level = level
-	end
-
-	logger.Message = function (self, level, ...)
-		if LEVEL[level] < LEVEL[self.level] then
-			return false
-		end
-		if type(arg[1]) == "string" then
-			local _, numCommands = string.gsub(arg[1], "[%%]", "")
-			for i = 2, numCommands+1 do
-				if type(arg[i]) ~= "number" and type(arg[i]) ~= "string" then
-					arg[i] = tostring(arg[i])
-				end
-			end
-		else
-			arg[1] = tostring(arg[1])
-		end
-		local message = string.format(unpack(arg))
-		if level == LOG_FATAL then
-			message = string.format("Turn %-3s %s", Game.GetGameTurn(), message)
-			print(level .. string.rep(" ", 7-level:len()) .. message)
-			if debug then print(debug.traceback()) end
-		else
-			if level >= LOG_INFO then
-				message = string.format("Turn %-3s %s", Game.GetGameTurn(), message)
-			end
-			print(level .. string.rep(" ", 7-level:len()) .. message)
-		end
-		return true
-	end
-
-	logger.Trace = function (logger, ...) return logger:Message(LOG_TRACE, unpack(arg)) end
-	logger.Debug = function (logger, ...) return logger:Message(LOG_DEBUG, unpack(arg)) end
-	logger.Info  = function (logger, ...) return logger:Message(LOG_INFO,  unpack(arg)) end
-	logger.Warn  = function (logger, ...) return logger:Message(LOG_WARN,  unpack(arg)) end
-	logger.Error = function (logger, ...) return logger:Message(LOG_ERROR, unpack(arg)) end
-	logger.Fatal = function (logger, ...) return logger:Message(LOG_FATAL, unpack(arg)) end
-	return logger
-end
-
 ---------------------------------------------------------------------
 function Round(num, places)
 	local mult = 10^(places or 0)
@@ -4508,14 +4562,14 @@ function PWRand()
 end
 
 function PWRandSeed(fixedseed)
-	local seed
-	if fixedseed == nil then
-		seed = Map.Rand(2147483647,"") --This function caps at this number, if you set it any higher, or try to trick it with multiple RNGs that end up with a value above this, it will break randomization. This is 31 bits of precision so... - Bobert13
-	else
-		seed = fixedseed
-	end
-	math.randomseed(seed)
-	print("random seed for this map is " .. seed)
+    local seed
+    if fixedseed == nil then
+        seed = (Map.Rand(32767,"") * 65536) + Map.Rand(65535,"")
+    else
+        seed = fixedseed
+    end
+    math.randomseed(seed)
+    print("random seed for this map is " .. seed) 
 end
 
 function PWRandint(low, high)
@@ -4925,24 +4979,13 @@ function FloatMap:GetRadiusAroundHex(x,y,radius)
 end
 
 function FloatMap:GetAverageInHex(x,y,radius)
-	--[[
-	local list = self:GetRadiusAroundHex(x,y,radius)
-	local avg = 0.0
-	for n = 1,#list do
-		local hex = list[n]
-		local xx = hex[1]
-		local yy = hex[2]
-		local i = self:GetIndex(xx,yy)
-		avg = avg + self.data[i]
-	end
-	avg = avg/#list
-	--]]
-	
 	local sum = 0
 	local numPlots = 0
-	local nearPlots = Plot_GetPlotsInCircleSimple(Map.GetPlot(x,y), 0, radius)
-	for _, nearPlot in pairs(nearPlots) do
-		sum = sum + self.data[Plot_GetID(nearPlot)]
+	--print("GetAverageInHex A")
+	local nearPlotIDs = Plot_GetPlotsInCircleFast(x, y, radius)
+	--print("GetAverageInHex B")
+	for _, nearPlotID in pairs(nearPlotIDs) do
+		sum = sum + self.data[nearPlotID]
 		numPlots = numPlots + 1
 	end
 	return sum / numPlots
@@ -4951,52 +4994,32 @@ end
 function FloatMap:GetStdDevInHex(x,y,radius)
 	local average = 0
 	local numPlots = 0
-	local nearPlots = Plot_GetPlotsInCircleSimple(Map.GetPlot(x,y), 0, radius)
+	--print("GetStdDevInHex A")
+	local nearPlotIDs = Plot_GetPlotsInCircleFast(x, y, radius)
+	--print("GetStdDevInHex B")
 	
-	for _, nearPlot in ipairs(nearPlots) do
-		average = average + self.data[Plot_GetID(nearPlot)]
+	for _, nearPlotID in ipairs(nearPlotIDs) do
+		average = average + self.data[nearPlotID]
 		numPlots = numPlots + 1
 	end
 	average = average / numPlots
 	
 	local deviation = 0.0
-	for _, nearPlot in ipairs(nearPlots) do
-		deviation = deviation + (self.data[Plot_GetID(nearPlot)] - average) ^ 2
+	for _, nearPlotID in ipairs(nearPlotIDs) do
+		deviation = deviation + (self.data[nearPlotID] - average) ^ 2
 	end
 	return math.sqrt(deviation/numPlots)
-	--[[
-	local list = self:GetRadiusAroundHex(x,y,radius)
-	local avg = 0.0
-	for n = 1,#list do
-		local hex = list[n]
-		local xx = hex[1]
-		local yy = hex[2]
-		local i = self:GetIndex(xx,yy)
-		avg = avg + self.data[i]
-	end
-	avg = avg/#list
-
-	local deviation = 0.0
-	for n = 1,#list do
-		local hex = list[n]
-		local xx = hex[1]
-		local yy = hex[2]
-		local i = self:GetIndex(xx,yy)
-		local sqr = self.data[i] - avg
-		deviation = deviation + (sqr * sqr)
-	end
-	deviation = math.sqrt(deviation/ #list)
-	return deviation
-	--]]
 end
 
 function FloatMap:Smooth(radius)
-	log:Info("FloatMap:Smooth(%s)", radius)
+	--log:Info("FloatMap:Smooth(%s)", radius)
 	local dataCopy = {}
-	for y = 0,self.height - 1 do
+	local i = 0
+	for y = 0, self.height - 1 do
 		for x = 0, self.width - 1 do
-			local i = self:GetIndex(x,y)
+--			local i = self:GetIndex(x,y)
 			dataCopy[i] = self:GetAverageInHex(x,y,radius)
+			i = i + 1
 		end
 	end
 	self.data = dataCopy
@@ -5004,10 +5027,12 @@ end
 
 function FloatMap:Deviate(radius)
 	local dataCopy = {}
-	for y = 0,self.height - 1 do
+	local i = 0
+	for y = 0, self.height - 1 do
 		for x = 0, self.width - 1 do
-			local i = self:GetIndex(x,y)
+--			local i = self:GetIndex(x,y)
 			dataCopy[i] = self:GetStdDevInHex(x,y,radius)
+			i = i + 1
 		end
 	end
 	self.data = dataCopy
@@ -5022,7 +5047,7 @@ function FloatMap:IsOnMap(x,y)
 end
 
 function FloatMap:Save(name)
-	print("saving " .. name .. "...")
+	print("saving " .. name .. "..")
 	local str = self.width .. "," .. self.height
 	for i = 0,self.length - 1 do
 		str = str .. "," .. self.data[i]
@@ -6254,7 +6279,6 @@ end
 function AssignStartingPlots:__CustomInit()
 	-- This function included to provide a quick and easy override for changing 
 	-- any initial settings. Add your customized version to the map script.
-	print("Testing212")
 	--
 	if not debugPrint then
 		print = function() end
@@ -7086,7 +7110,7 @@ function AssignStartingPlots:AdjustTiles()
 			BuffDeserts(plot)
 			
 			if not Cep and plot:IsLake() then
-				Game.SetPlotExtraYield( x, y, YieldTypes.YIELD_FOOD, -1)
+				--Game.SetPlotExtraYield( x, y, YieldTypes.YIELD_FOOD, -1)
 				Game.SetPlotExtraYield( x, y, YieldTypes.YIELD_GOLD, 1)
 			end
 		end
@@ -7120,7 +7144,7 @@ function AssignStartingPlots:ProcessResourceList(frequency, impact_table_number,
 
 	-- This function needs to receive two numbers and two tables.
 	-- Length of the plotlist is divided by frequency to get the number of 
-	-- resources to place. ... The first table is a list of plot indices.
+	-- resources to place. .. The first table is a list of plot indices.
 	-- The second table contains subtables, one per resource type, detailing the
 	-- resource ID number, quantity, weighting, and impact radius of each applicable
 	-- resource. If radius min and max are different, the radius length is variable
@@ -9042,11 +9066,11 @@ function reachablePlots(pPlayer, pPlot, sRoute, fBlockaded)
   return list
 end
 
--- Is the plot passable for this route type ...
+-- Is the plot passable for this route type ..
 function isPassable(pPlot, sRoute)
   bPassable = true
 
-  -- ... due to terrain, eg natural wonders and those covered in ice
+  -- .. due to terrain, eg natural wonders and those covered in ice
   iFeature = pPlot:GetFeatureType()
   if (iFeature > 0 and GameInfo.Features[iFeature].NaturalWonder == true) then
     bPassable = false
@@ -9057,7 +9081,7 @@ function isPassable(pPlot, sRoute)
   return bPassable
 end
 
--- Is the plot blockaded for this player ...
+-- Is the plot blockaded for this player ..
 function isBlockaded(pPlot, pPlayer, fBlockaded)
   bBlockaded = false
 
