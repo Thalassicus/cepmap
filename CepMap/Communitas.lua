@@ -6,7 +6,7 @@
 - Cephalo (Rich Marinaccio)		- Perlin landform, elevation and rainfall creation
 - Sirian (Bob Thomas)			- Island creation, some code from Continents and Terra scripts
 - WHoward69						- Mountain-pass finding algorithm
-- Bobert13						- Some code fixes and optimizations
+- Bobert13						- Bug fixes and optimizations
 - Thalassicus (Victor Isbell)	- Ocean rifts, rivers through lakes, natural wonder placement,
 								  resource placement, map options, inland seas, aesthetic polishing
 
@@ -30,9 +30,10 @@ include("FLuaVector")
 
 MapGlobals = {}
 
+local overrideAssignStartingPlots = true
 local debugTime = false
-local debugPrint = false
-local debugWithLogger = false
+local debugPrint = true
+local debugWithLogger = true
 
 
 
@@ -51,7 +52,6 @@ function MapGlobals:New()
 
 	--Percent of land tiles on the map.
 	mglobal.landPercent				= 0.35
-
 	
 	--Top and bottom map latitudes.
 	mglobal.topLatitude				= 70
@@ -74,7 +74,7 @@ function MapGlobals:New()
 	mglobal.coastScatter			= 0.14 	--Recommended range:[0.01 to 0.3]
 											--Higher values result in more islands and variance on landmasses and coastlines.
 											
-	mglobal.mountainScatter			= 0.12 	--Recommended range:[0.1 to 0.8]
+	mglobal.mountainScatter			= 155 * mapW --Recommended range:[130 to 1000]
 											--Lower values make large, long, mountain ranges. Higher values make sporadic mountainous features.
 	
 	
@@ -118,14 +118,30 @@ function MapGlobals:New()
 	
 
 	-- Water
-	mglobal.oceanRiftWidth			= 0.06	-- percent of map width for average oceans
-	mglobal.lakeSize				= 10	-- read-only; cannot change lake sizes
 	mglobal.riverPercent			= 0.15	-- Percent of river junctions that are large enough to become rivers.	
 	mglobal.riverRainCheatFactor	= 1.6	-- Values greater than one favor watershed size. Values less than one favor actual rain amount.
 	mglobal.minWaterTemp			= 0.10	-- Sets water temperature compression that creates the land/sea seasonal temperature differences that cause monsoon winds.
 	mglobal.maxWaterTemp			= 0.60	
 	mglobal.geostrophicFactor		= 3.0	-- Strength of latitude climate versus monsoon climate. 
 	mglobal.geostrophicLateralWindStrength = 0.6 
+	mglobal.lakeSize				= 10	-- read-only; cannot change lake sizes with a map script
+	mglobal.oceanMaxWander			= 3		-- number of tiles a rift can randomly wander from its intended path
+	mglobal.oceanElevationWeight	= 0.25	-- higher numbers make oceans avoid continents
+	mglobal.oceanRiftWidth			= math.max(1, Round(mapW/40)) -- minimum number of ocean tiles in a rift
+	
+											-- percent of map width:
+	mglobal.atlanticSize			= 0.05	-- size near poles
+	mglobal.atlanticBulge			= 0		-- size increase at equator
+	mglobal.atlanticCurve			= 0.04	-- S-curve distance
+	mglobal.pacificSize				= 0		-- size near poles
+	mglobal.pacificBulge			= 0.20	-- size increase at equator
+	mglobal.pacificCurve			= 0		-- S-curve distance
+	
+	
+	mglobal.atlanticSize			= math.min(4, Round(mglobal.atlanticSize * mapW))
+	mglobal.pacificBulge			= Round(mglobal.pacificBulge * mapW)
+	mglobal.atlanticCurve			= math.min(5, Round(mglobal.atlanticCurve * mapW))
+	mglobal.pacificCurve			= math.min(3, Round(mglobal.pacificCurve * mapW))
 	
 	
 	-- Resources
@@ -160,6 +176,7 @@ function MapGlobals:New()
 	
 	--]]
 	
+	do
 	
 	local oWorldAge = Map.GetCustomOption(1)
 	if oWorldAge == 4 then oWorldAge = 1 + Map.Rand(3, "Communitas random world age - Lua") end
@@ -182,6 +199,7 @@ function MapGlobals:New()
 	else
 		print("Map Age:  Normal")
 	end
+	mglobal.mountainScatter = mglobal.mountainScatter * 0.00001
 	
 	
 	local oTemp = Map.GetCustomOption(2)
@@ -261,24 +279,22 @@ function MapGlobals:New()
 	
 	
 	local oRiftWidth = Map.GetCustomOption(8)
+	--mglobal.oceanRiftWidth = mglobal.oceanRiftWidth * mapW	
 	if oRiftWidth == 1 then
 		print("Map Ocean Width: Narrow")
-		mglobal.oceanRiftWidth = mglobal.oceanRiftWidth / 2
+		mglobal.oceanRiftWidth = 1
+		mglobal.landPercent = mglobal.landPercent - 0.02
 	elseif oRiftWidth == 3 then
 		print("Map Ocean Width: Wide")
-		mglobal.oceanRiftWidth = mglobal.oceanRiftWidth * 2
+		mglobal.oceanRiftWidth = math.max(4, Round(mapW/20)) 
+		mglobal.landPercent = mglobal.landPercent + 0.05
 	end	
-	mglobal.oceanRiftWidth	= mglobal.oceanRiftWidth * mapW	
 	
 	-- Ocean rift sizes
-	mglobal.pacificSize		= 1										-- size near poles
-	mglobal.pacificBulge	= Round(mglobal.oceanRiftWidth * 3)		-- size increase at equator
-	mglobal.atlanticSize	= Round(mglobal.oceanRiftWidth * 0.5)	-- size near poles
-	mglobal.atlanticBulge	= 0										-- size increase at equator
 	
 	mglobal.oceanRiftWidth	= Round(mglobal.oceanRiftWidth)
 	
-	
+	end
 	
 	
 	
@@ -293,6 +309,7 @@ function MapGlobals:New()
 	-- Other settings
 	-- 
 
+	do
 	--These attenuation factors lower the altitude of the map edges. This is
 	--currently used to prevent large continents in the uninhabitable polar
 	--regions. East/west attenuation is set to zero, but modded maps may
@@ -320,7 +337,7 @@ function MapGlobals:New()
 	mglobal.isleSouthLatitudeLimit = -65
 	mglobal.isleMinDeepWaterNeighbors = 0
 
-	
+	end
 	
 	
 	
@@ -337,6 +354,7 @@ function MapGlobals:New()
 	-----------------------------------------------------------------------
 	--Below is map data that should not be altered.
 	
+	do
 	mglobal.MountainPasses		= {}
 	mglobal.tropicalPlots		= {}
 	mglobal.oceanRiftPlots		= {}
@@ -443,7 +461,7 @@ function MapGlobals:New()
 	mglobal.pathDirections  = {DirectionTypes.DIRECTION_NORTHEAST, DirectionTypes.DIRECTION_EAST, DirectionTypes.DIRECTION_SOUTHEAST,
 							  DirectionTypes.DIRECTION_SOUTHWEST, DirectionTypes.DIRECTION_WEST, DirectionTypes.DIRECTION_NORTHWEST}
 	
-	
+	end
 	
 	return mglobal
 end
@@ -966,10 +984,10 @@ function GeneratePlotTypes()
 	print("Generating plot types - CommunitasMap")
 	ShiftMaps()
 	DiffMap = GenerateDiffMap(mapW,mapH,true,false)
-	GenerateArcticOceans()
+	CreateArcticOceans()
+	CreateVerticalOceans()
 	ConnectSeasToOceans()
 	FillInLakes()
-	GenerateOceanRifts()
 	elevationMap = SetOceanRiftElevations(elevationMap)	
 	ConnectTerraContinents()
 	
@@ -1011,6 +1029,7 @@ function GeneratePlotTypes()
 	Map.RecalculateAreas()	
 	GenerateIslands()
 	GenerateCoasts()
+	SetOceanRiftPlots()
 end
 
 function ConnectSeasToOceans()
@@ -1124,7 +1143,7 @@ function ConnectTerraContinents()
 	local newLand = {}
 	
 	for index, area in ipairs(continents) do
-		if index ~= 1 and area.distance < mg.oceanRiftWidth and area.size / math.max(1, area.distance) > mg.terraConnectWeight then
+		if index ~= 1 and area.distance < mg.oceanRiftWidth + 2 and area.size / math.max(1, area.distance) > mg.terraConnectWeight then
 			log:Info("ConnectTerraContinents: Connect continents[%s].size = %-3s distance = %-3s airDistance = %-3s size/distance = %s",
 				index,
 				area.size,
@@ -1334,7 +1353,9 @@ function RestoreLakes()
 	end
 end
 
-
+function AddLakes()
+	-- disable vanilla lake creation
+end
 
 
 
@@ -1422,7 +1443,6 @@ function GenerateTerrain()
 	if debugTime then print(string.format("%5s ms, GenerateTerrain %s", math.floor((os.clock() - timeStart) * 1000), "Main")) end
 	if debugTime then timeStart = os.clock() end
 	
-	SetOceanRiftPlots()
 	if debugTime then print(string.format("%5s ms, GenerateTerrain %s", math.floor((os.clock() - timeStart) * 1000), "SetOceanRiftPlots")) end
 	if debugTime then timeStart = os.clock() end
 	BlendTerrain()
@@ -1441,7 +1461,7 @@ function GenerateIslands()
 	local iNumTotalCells = iNumCellColumns * iNumCellRows
 	local cell_data = table.fill(false, iNumTotalCells) -- Stores data on map cells in use. All cells begin as empty.
 	local iNumCellsInUse = 0
-	local iNumCellTarget = math.floor(iNumTotalCells * 0.66)
+	local iNumCellTarget = math.floor(iNumTotalCells * 1)
 	local island_chain_PlotTypes = table.fill(PlotTypes.PLOT_OCEAN, iW * iH)
 
 	-- Add randomly generated island groups
@@ -2101,16 +2121,11 @@ function GenerateIslands()
 		for x = 0, iW - 1 do
 			local i = y * iW + x + 1
 			local plot = Map.GetPlot(x, y)
-			if island_chain_PlotTypes[i] ~= PlotTypes.PLOT_OCEAN and plot:GetPlotType() == PlotTypes.PLOT_OCEAN and not plot:IsLake() and not plot:IsRiverSide() then
+			if island_chain_PlotTypes[i] ~= PlotTypes.PLOT_OCEAN and Plot_IsWater(plot, true) then
 				local isValid = true
 				local numAdjacentLand = 0
 				-- Don't fill river deltas with land
 				for nearPlot in Plot_GetPlotsInCircle(plot, 1) do
-					if nearPlot:IsRiverSide() then -- does not appear to work?
-						isValid = false
-						break
-					end
-					--
 					if nearPlot:GetPlotType() ~= PlotTypes.PLOT_OCEAN and nearPlot:Area():GetNumTiles() >= 10 then
 						numAdjacentLand = numAdjacentLand + 1
 						if numAdjacentLand > 1 then
@@ -2118,7 +2133,6 @@ function GenerateIslands()
 							break
 						end
 					end
-					--]]
 				end
 				if isValid then
 					plot:SetPlotType(island_chain_PlotTypes[i], false, false)
@@ -2145,11 +2159,14 @@ function BlendTerrain()
 	
 	local mountainCheckTime = 0
 	for plotID, plot in Plots(Shuffle) do
-		if not plot:IsWater() then
+		if Plot_IsWater(plot) then
+			--
+		else
 			local plotTerrainID = plot:GetTerrainType()
 			local plotFeatureID = plot:GetTerrainType()
 			local plotPercent = Plot_GetCirclePercents(plot, 1, mg.terrainBlendRange)
 			local randPercent = 1 + PWRand() * 2 * mg.terrainBlendRandom - mg.terrainBlendRandom
+			
 			if plot:IsMountain() then
 				-- minimize necessary pathfinding
 				local numNearMountains = 0
@@ -2166,20 +2183,20 @@ function BlendTerrain()
 			else
 				if plotTerrainID == TerrainTypes.TERRAIN_GRASS then
 					if plotPercent.TERRAIN_DESERT + plotPercent.TERRAIN_SNOW >= 0.33 * randPercent then
-						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
+						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, true, true)
 						if plot:GetFeatureType() == FeatureTypes.FEATURE_MARSH then
 							plot:SetFeatureType(FeatureTypes.FEATURE_FOREST, -1)
 						end
 					end
 				elseif plotTerrainID == TerrainTypes.TERRAIN_PLAINS then
 					if plotPercent.TERRAIN_DESERT >= 0.5 * randPercent then
-						--plot:SetTerrainType(TerrainTypes.TERRAIN_DESERT, false, false)
+						--plot:SetTerrainType(TerrainTypes.TERRAIN_DESERT, true, true)
 					end
 				elseif plotTerrainID == TerrainTypes.TERRAIN_DESERT then
 					if plotPercent.TERRAIN_GRASS + plotPercent.TERRAIN_SNOW >= 0.25 * randPercent then
-						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
+						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, true, true)
 					elseif plotPercent.FEATURE_JUNGLE + plotPercent.FEATURE_MARSH >= 0.25 * randPercent then
-						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
+						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, true, true)
 					end
 				elseif plotFeatureID == FeatureTypes.FEATURE_JUNGLE or plotFeatureID == FeatureTypes.FEATURE_MARSH then
 					if plotPercent.TERRAIN_SNOW + plotPercent.TERRAIN_TUNDRA + plotPercent.TERRAIN_DESERT >= 0.25 * randPercent then
@@ -2187,7 +2204,7 @@ function BlendTerrain()
 					end
 				elseif plotTerrainID == TerrainTypes.TERRAIN_TUNDRA then
 					if 2 * plotPercent.TERRAIN_GRASS + plotPercent.TERRAIN_PLAINS + plotPercent.TERRAIN_DESERT >= 0.5 * randPercent then
-						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
+						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, true, true)
 					end
 				end
 			end
@@ -2195,9 +2212,9 @@ function BlendTerrain()
 				local isMountain = plot:IsMountain()
 				local warmCount = 2 * plotPercent.FEATURE_JUNGLE + 2 * plotPercent.FEATURE_MARSH + plotPercent.TERRAIN_GRASS + plotPercent.TERRAIN_DESERT + 0.5 * plotPercent.TERRAIN_PLAINS
 				if warmCount >= 0.25 * randPercent then
-					plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, false, false)
+					plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS, true, true)
 				elseif warmCount >= 0.10 * randPercent or plot:IsFreshWater() then
-					plot:SetTerrainType(TerrainTypes.TERRAIN_TUNDRA, false, false)
+					plot:SetTerrainType(TerrainTypes.TERRAIN_TUNDRA, true, true)
 				end
 				if isMountain then
 					plot:SetPlotType(PlotTypes.PLOT_MOUNTAIN, false, false)
@@ -2281,22 +2298,29 @@ function CreatePossibleMountainPass(plot)
 end
 
 
-function GenerateArcticOceans()
+function CreateArcticOceans()
 	local mapW, mapH = Map.GetGridSize()	
-	CreateOceanRift{y = 0,  	direction = mg.E, size = 3,  fill = true}
-	CreateOceanRift{y = mapH-1, direction = mg.E, size = 3,  fill = true}
+	CreateOceanRift{y = 0,  	direction = mg.E, totalSize = 1, oceanSize = 1, fill = true}
+	CreateOceanRift{y = mapH-1, direction = mg.E, totalSize = 1, oceanSize = 1, fill = true}
 end
 
-function GenerateOceanRifts()	
+function CreateVerticalOceans()	
 	local oOceanRifts = Map.GetCustomOption(7)
+	local mapW, mapH = Map.GetGridSize()	
 	if oOceanRifts == 6 then
 		-- No vertical rifts
 		return
 	end
 	
-	log:Info("GenerateOceanRifts mg.oceanRiftWidth = %s", mg.oceanRiftWidth)
+	log:Info("CreateVerticalOceans mg.oceanRiftWidth = %s", mg.oceanRiftWidth)
 	
-	local mapW, mapH = Map.GetGridSize()	
+	
+	function CreatePacific(midline)
+		CreateOceanRift{x = midline, totalSize = mg.pacificSize, bulge = mg.pacificBulge, curve = mg.pacificCurve, oceanSize = math.max(1, Round(mg.oceanRiftWidth - 1))}
+	end
+	function CreateAtlantic(midline)
+		CreateOceanRift{x = midline, totalSize = mg.atlanticSize, bulge = mg.atlanticBulge, curve = mg.atlanticCurve, oceanSize = mg.oceanRiftWidth, cleanMid = true}
+	end
 	
 	local landInColumn = {}	
 	for x = 0, mapW - 1 do
@@ -2342,22 +2366,26 @@ function GenerateOceanRifts()
 	end
 	
 	table.insert(mg.oceanRiftMidlines, startX)
-	if oOceanRifts == 1 or oOceanRifts == 3 then
+	if mapW < 60 then
+		log:Debug("CreateVerticalOceans: Creating Atlantic at x=%s", startX)
+		CreateAtlantic(startX)
+		return
+	elseif oOceanRifts == 1 or oOceanRifts == 3 then
 		-- PA or PP
-		log:Debug("GenerateOceanRifts: Creating Pacific  at x=%s", startX)
-		CreateOceanRift{x = startX, size = mg.pacificSize, bulge = mg.pacificBulge}
+		log:Debug("CreateVerticalOceans: Creating Pacific  at x=%s", startX)
+		CreatePacific(startX)
 	elseif oOceanRifts == 2 then
 		-- AA
-		log:Debug("GenerateOceanRifts: Creating Atlantic at x=%s", startX)
-		CreateOceanRift{x = startX, size = mg.atlanticSize, bulge = mg.atlanticBulge}
+		log:Debug("CreateVerticalOceans: Creating Atlantic at x=%s", startX)
+		CreateAtlantic(startX)
 	elseif oOceanRifts == 4 or oOceanRifts == 5 then
 		-- 1 or 2 random
 		if 50 >= Map.Rand(100, "Random ocean rift - Lua") then
-			log:Debug("GenerateOceanRifts: Creating Pacific  at x=%s (Random)", startX)
-			CreateOceanRift{x = startX, size = mg.pacificSize, bulge = mg.pacificBulge}
+			log:Debug("CreateVerticalOceans: Creating Pacific  at x=%s (Random)", startX)
+			CreatePacific(startX)
 		else
-			log:Debug("GenerateOceanRifts: Creating Atlantic at x=%s (Random)", startX)
-			CreateOceanRift{x = startX, size = mg.atlanticSize, bulge = mg.atlanticBulge}
+			log:Debug("CreateVerticalOceans: Creating Atlantic at x=%s (Random)", startX)
+			CreateAtlantic(startX)
 		end
 	end
 	
@@ -2385,20 +2413,20 @@ function GenerateOceanRifts()
 	table.insert(mg.oceanRiftMidlines, startX)
 	if oOceanRifts == 1 or oOceanRifts == 2 then
 		-- PA or AA
-		log:Debug("GenerateOceanRifts: Creating Atlantic at x=%s", startX)
-		CreateOceanRift{x = startX, size = mg.atlanticSize, bulge = mg.atlanticBulge}
+		log:Debug("CreateVerticalOceans: Creating Atlantic at x=%s", startX)
+		CreateAtlantic(startX)
 	elseif oOceanRifts == 3 then
 		-- PP
-		log:Debug("GenerateOceanRifts: Creating Pacific  at x=%s", startX)
-		CreateOceanRift{x = startX, size = mg.pacificSize, bulge = mg.pacificBulge}
+		log:Debug("CreateVerticalOceans: Creating Pacific  at x=%s", startX)
+		CreatePacific(startX)
 	elseif oOceanRifts == 4 then
 		-- 2 random
 		if 50 >= Map.Rand(100, "Random ocean rift - Lua") then
-			log:Debug("GenerateOceanRifts: Creating Pacific  at x=%s (Random)", startX)
-			CreateOceanRift{x = startX, size = mg.pacificSize, bulge = mg.pacificBulge}
+			log:Debug("CreateVerticalOceans: Creating Pacific  at x=%s (Random)", startX)
+			CreatePacific(startX)
 		else
-			log:Debug("GenerateOceanRifts: Creating Atlantic at x=%s (Random)", startX)
-			CreateOceanRift{x = startX, size = mg.atlanticSize, bulge = mg.atlanticBulge}
+			log:Debug("CreateVerticalOceans: Creating Atlantic at x=%s (Random)", startX)
+			CreateAtlantic(startX)
 		end
 	end
 end
@@ -2412,54 +2440,131 @@ function CreateOceanRift(args)
 	local y			= args.y or 0
 	local midline	= args.midline or x
 	local direction	= args.direction or mg.N
-	local size		= args.size or 5
+	local totalSize	= args.totalSize or 3
+	local oceanSize	= args.oceanSize or mg.oceanRiftWidth
 	local bulge		= args.bulge or 0
+	local curve		= args.curve or 0
 	local fill		= args.fill
+	local cleanMid	= args.cleanMid
 	
-	local plots = GetRiftPlots(x, midline, y, direction, size, bulge)
+	local plots = {}
+	if bulge ~= 0 then
+		-- see which curve direction fits the land better
+			  plots  = GetRiftPlots(x-2, midline-2, y, direction, totalSize, oceanSize, bulge, curve)
+		local plotsB = GetRiftPlots(x+2, midline+2, y, direction, totalSize, oceanSize, bulge, curve)
+		
+		if GetMatchingPlots(plotsB) > GetMatchingPlots(plots) then
+			plots = DeepCopy(plotsB)
+		end
+	elseif curve ~= 0 then
+		-- see which curve direction fits the land better
+			  plots  = GetRiftPlots(x-1, midline-1, y, direction, totalSize, oceanSize, bulge, curve)
+		local plotsB = GetRiftPlots(x+1, midline+1, y, direction, totalSize, oceanSize, bulge, -1 * curve)
+		
+		if GetMatchingPlots(plotsB) > GetMatchingPlots(plots) then
+			plots = DeepCopy(plotsB)
+		end
+	else
+		plots = GetRiftPlots(x, midline, y, direction, totalSize, oceanSize, bulge, curve)
+	end
+	
 	for plotID, v in pairs(plots) do
-		--log:Trace("oceanRiftPlots %s, %s, %s", v.plot:GetX(), v.plot:GetY(), v.strip)
-		if (fill and v.strip <= 0) or IsBetween(-1, v.strip, 0) then
+		log:Trace("oceanRiftPlots %s, %s, %s", v.plot:GetX(), v.plot:GetY(), v.strip)
+		if (fill and v.strip <= 0) or IsBetween(0, v.strip, oceanSize) then
 			mg.oceanRiftPlots[plotID] = {
 				isWater = true,
 				terrainID = TerrainTypes.TERRAIN_OCEAN
 			}
-		elseif v.strip == -2 or v.strip == 1 then
-			if 50 >= Map.Rand(100, "Ocean rift ocean/coast - Lua") then
+		elseif v.strip == -1 or v.strip == oceanSize+1 then
+			if (cleanMid and v.strip <= 0) then
+				mg.oceanRiftPlots[plotID] = {
+					isWater = true,
+					terrainID = TerrainTypes.TERRAIN_OCEAN
+				}
+			elseif 50 >= Map.Rand(100, "Ocean rift ocean/coast - Lua") then
 				mg.oceanRiftPlots[plotID] = {
 					isWater = true,
 					terrainID = TerrainTypes.TERRAIN_OCEAN
 				}
 			else
-				mg.oceanRiftPlots[plotID] = {
+				mg.oceanRiftPlots[plotID] = mg.oceanRiftPlots[plotID] or {
 					isWater = true,
 					terrainID = TerrainTypes.TERRAIN_COAST
 				}
 			end
-		elseif v.strip == -3 or v.strip == 2 then
+		elseif v.strip == -2 or v.strip == oceanSize+2 then
 			if 50 >= Map.Rand(100, "Ocean rift coast/land - Lua") then
-				mg.oceanRiftPlots[plotID] = {
-					isWater = true,
-					terrainID = TerrainTypes.TERRAIN_COAST
-				}
+				if (cleanMid and v.strip <= 0) then
+					mg.oceanRiftPlots[plotID] = {
+						isWater = true,
+						terrainID = TerrainTypes.TERRAIN_OCEAN
+					}
+				else
+					mg.oceanRiftPlots[plotID] = mg.oceanRiftPlots[plotID] or {
+						isWater = true,
+						terrainID = TerrainTypes.TERRAIN_COAST
+					}
+				end
 			else
-				mg.oceanRiftPlots[plotID] = {
+				mg.oceanRiftPlots[plotID] = mg.oceanRiftPlots[plotID] or {
 					isWater = false,
 					terrainID = TerrainTypes.TERRAIN_COAST
 				}
 			end	
+		else
+			
 		end
+	end
+	
+
+	function GetMatchingPlots(plots)
+		local nicePlots = 0
+		for plotID, v in pairs(plots) do
+			if (fill and v.strip <= 0) or IsBetween(0, v.strip, oceanSize) or v.strip == -1 or v.strip == oceanSize+1 then
+				-- turns plots to water
+				if Plot_IsWater(v.plot, true) then
+					nicePlots = nicePlots + 1
+				else
+					nicePlots = nicePlots - 1
+				end
+			elseif v.strip == -2 or v.strip == oceanSize+2 then
+				-- 50% chance turns to water
+				if Plot_IsWater(v.plot, true) then
+					nicePlots = nicePlots + 1 -- okay if already water
+				else
+					nicePlots = nicePlots - 0.5 -- destroys land half the time
+				end
+			else
+				-- encourage land in center area
+				if Plot_IsWater(v.plot, true) then
+					nicePlots = nicePlots - 0.1
+				else
+					nicePlots = nicePlots + 0.1
+				end
+			end
+		end
+		return nicePlots
 	end
 end
 
-function GetRiftPlots(x, midline, y, direction, size, bulge)
+function GetRiftPlots(x, midline, y, direction, totalSize, oceanSize, bulge, curve)
 	local mapW, mapH = Map.GetGridSize()
 	local riftPlots = {}
 	
-	log:Debug("x=%-3s, y=%-3s Creating %s ocean rift with midline %s on map size (%s, %s)", x, y, mg.directionNames[direction], midline, mapW, mapH)
+	log:Debug("x=%-3s, y=%-3s Creating %s ocean rift with midline %s curve %s on map size (%s, %s)", x, y, mg.directionNames[direction], midline, curve, mapW, mapH)
 	
 	local nextDirA		= 0
 	local nextDirB		= 0
+	
+	local curveNormal = (50 >= Map.Rand(100, "Ocean Rift Curve - Lua"))
+	
+	function GetMidX(y)
+		if curve == 0 then
+			return midline
+		end
+		log:Trace("%s * GetSinCurve(%s, %s) = %s", curve, y, mapH, Round(curve * GetSinCurve(y, mapH, 3)))
+		return (midline + Round(curve * GetSinCurve(y, mapH, 3))) % mapW
+	end
 	
 	if direction == mg.N then
 		nextDirA = mg.NE
@@ -2481,15 +2586,19 @@ function GetRiftPlots(x, midline, y, direction, size, bulge)
 	
 	plot = Map.GetPlot(x, y)
 	local attempts = 0
-	local maxDistance = 20 + math.floor(mg.oceanRiftWidth / 2)
 	while plot and attempts < mapW do
-		local foundNewPlots		= false
-		local plotID			= Plot_GetID(plot)
-		local radius			= math.max(1, Round((size-1)/2 + bulge/2 * GetBellCurve(y, mapH)))
+		local foundNewPlots	= false
+		local plotID		= Plot_GetID(plot)
+		local radius		= math.max(0, Round((totalSize-1)/2 + bulge/2 * GetBellCurve(y, mapH)))
+		local extraRadius	= oceanSize + 2
 		
-		log:Trace("x=%-3s, y=%-3s radius=%-3s", x, y, radius)
+		if direction == mg.E or direction == mg.W then
+			log:Trace("x=%-3s, y=%-3s radius=%-3s extraRadius=%-3s", x, y, radius, extraRadius)
+		else
+			log:Trace("x=%-3s, y=%-3s radius=%-3s extraRadius=%-3s midX=%-3s", x, y, radius, extraRadius, GetMidX(y))
+		end
 		
-		for nearPlot, nearDistance in Plot_GetPlotsInCircle(plot, 0, radius + 2) do
+		for nearPlot, nearDistance in Plot_GetPlotsInCircle(plot, 0, radius + extraRadius) do
 			if not mg.oceanRiftPlots[nearPlotID] then
 				local nearPlotID = Plot_GetID(nearPlot)
 				if not riftPlots[nearPlotID] then
@@ -2521,31 +2630,37 @@ function GetRiftPlots(x, midline, y, direction, size, bulge)
 		end
 		
 		
-		local oddsA = 50
+		local oddsA = 0.50
 		if nextPlotA == nextPlotB then		
 			plot = nextPlotA
 		else
-			local distanceA = Map.PlotDistance(nextPlotA:GetX(), y, midline, y)
-			local distanceB = Map.PlotDistance(nextPlotB:GetX(), y, midline, y)
+			local distanceA = Map.PlotDistance(nextPlotA:GetX(), y, GetMidX(y), y)
+			local distanceB = Map.PlotDistance(nextPlotB:GetX(), y, GetMidX(y), y)
 			if distanceA < distanceB then
-				oddsA = oddsA + (50 * distanceA / maxDistance)
+				oddsA = oddsA + (0.50 * distanceA / mg.oceanMaxWander)
 			elseif distanceA > distanceB then
-				oddsA = oddsA - (50 * distanceA / maxDistance)
+				oddsA = oddsA - (0.50 * distanceA / mg.oceanMaxWander)
 			end
 			
+			--[[
 			local nextElevationA = mg.elevationRect[nextPlotA:GetX()][nextPlotA:GetY()]
 			local nextElevationB = mg.elevationRect[nextPlotB:GetX()][nextPlotB:GetY()]
 			
 			if nextElevationA < nextElevationB then
-				oddsA = oddsA + 25
+				oddsA = oddsA + mg.oceanElevationWeight
 			elseif nextElevationA > nextElevationB then
-				oddsA = oddsA - 25
+				oddsA = oddsA - mg.oceanElevationWeight
 			end
+			--]]
 			
-			if oddsA >= Map.Rand(100, "Ocean Rifts - Lua") then
+			local randomPercent = 0.5--PWRand()
+			log:Trace("distance A=%s B=%s oddsA=%.2f rand=%.2f", distanceA, distanceB, Round(oddsA, 2), Round(randomPercent, 2))
+			if oddsA >= randomPercent then
 				plot = nextPlotA
+				log:Trace("choose A")
 			else
 				plot = nextPlotB
+				log:Trace("choose B")
 			end
 		end
 			
@@ -2574,14 +2689,35 @@ function SetOceanRiftPlots()
 		local plot = Map.GetPlotByIndex(plotID)
 		--print(string.format("oceanRiftPlots plotID=%-4s isWater=%-6s terrainID=%-3s", plotID, tostring(data.isWater), data.terrainID))
 		if data.isWater then
-			if data.terrainID == TerrainTypes.TERRAIN_OCEAN or not plot:IsWater() then
-				plot:SetTerrainType(data.terrainID, false, true)
-			end
-			if data.terrainID == TerrainTypes.TERRAIN_OCEAN then
-				--plot:SetFeatureType(FeatureTypes.FEATURE_ICE, -1)
+			if not plot:IsWater() or data.terrainID == TerrainTypes.TERRAIN_OCEAN then
+				plot:SetTerrainType(data.terrainID, true, true)
 			end
 		end
-	end	
+	end
+	--
+	for plotID, data in pairs(mg.oceanRiftPlots) do
+		local plot = Map.GetPlotByIndex(plotID)
+		if plot:GetTerrainType() == TerrainTypes.TERRAIN_COAST then
+			local foundLand = false
+			for nearPlot in Plot_GetPlotsInCircle(plot, 1, 2) do
+				if not Plot_IsWater(nearPlot) then
+					foundLand = true
+					break
+				end
+			end
+			if not foundLand then
+				plot:SetTerrainType(TerrainTypes.TERRAIN_OCEAN, true, true)
+			end
+		elseif plot:GetTerrainType() == TerrainTypes.TERRAIN_OCEAN then
+			for nearPlot in Plot_GetPlotsInCircle(plot, 1, 1) do
+				if not Plot_IsWater(nearPlot) then
+					plot:SetTerrainType(TerrainTypes.TERRAIN_COAST, true, true)
+					break
+				end
+			end
+		end
+	end
+	--]]
 end
 
 
@@ -3335,6 +3471,7 @@ function GenerateMountainMap(width,height,xWrap,yWrap,initFreq)
 	--mountainMap:Save("premountMap.csv")
 
 	local stdDevThreshold = stdDevMap:FindThresholdFromPercent(mg.landPercent + 0.05,true,false)
+	log:Debug("stdDevThreshold = %s", stdDevThreshold)
 
 	for y = 0, mountainMap.height - 1 do
 		for x = 0,mountainMap.width - 1 do
@@ -3421,6 +3558,7 @@ function GenerateElevationMap(width,height,xWrap,yWrap)
 	if debugTime then timeStart = os.clock() end
 
 	elevationMap.seaLevelThreshold = elevationMap:FindThresholdFromPercent(mg.landPercent + 0.05,true,false)
+	log:Debug("seaLevelThreshold = %s", elevationMap.seaLevelThreshold)
 
 	if debugTime then print(string.format("%5s ms, GenerateElevationMap %s", math.floor((os.clock() - timeStart) * 1000), "End")) end
 	return elevationMap
@@ -4094,11 +4232,10 @@ end
 
 function Plot_IsWater(plot, useElevation, ignoreSeas)
 	if useElevation then
-		if ignoreSeas and Contains(mg.seaPlots, plot) then
-			-- try to preserve inland seas
-			return elevationMap.seaLevelThreshold
-		end
 		return elevationMap.data[elevationMap:GetIndex(plot:GetX(), plot:GetY())] < elevationMap.seaLevelThreshold
+	end
+	if ignoreSeas and Contains(mg.seaPlots, plot) then
+		return false
 	end
 	return (plot:GetPlotType() == PlotTypes.PLOT_OCEAN) or Contains(mg.lakePlots, plot)
 end
@@ -4214,6 +4351,25 @@ function Contains(list, value)
 	return false
 end
 
+function DeepCopy(object)
+	-- DeepCopy(object) copies all elements of a table
+    local lookup_table = {}
+    local function _copy(object)
+        if type(object) ~= "table" then
+            return object
+        elseif lookup_table[object] then
+            return lookup_table[object]
+        end
+        local new_table = {}
+        lookup_table[object] = new_table
+        for index, value in pairs(object) do
+            new_table[_copy(index)] = _copy(value)
+        end
+        return setmetatable(new_table, getmetatable(object))
+    end
+    return _copy(object)
+end
+
 function Constrain(lower, mid, upper)
 	return math.max(lower, math.min(mid, upper))
 end
@@ -4284,6 +4440,16 @@ function GetBellCurve(value, normalize)
 		value = 1 - math.abs(value - normalize) / normalize
 	end
 	return math.sin(value * math.pi * 2 - math.pi/2)/2 + 0.5
+end
+
+function GetSinCurve(value, normalize, pushEdges)
+	--Returns a value along a sin curve from a 0 - 1 range
+	if not pushEdges then pushEdges = 0 end
+	if normalize then
+		value = 1 - ((normalize - pushEdges*2) - (value - pushEdges)) / (normalize - pushEdges*2)
+		--value = 1 - math.abs(value - normalize) / normalize
+	end
+	return math.sin(value * math.pi * 2)
 end
 
 -----------------------------------------------------------------------------
@@ -4743,10 +4909,21 @@ function FloatMap:Normalize()
 		scaler = 1.0/maxAlt
 	end
 
-	for i = 0,self.length - 1 do
-		self.data[i] = self.data[i] * scaler
-	end
+	-- for i = 0,self.length - 1,1 do
+		-- self.data[i] = self.data[i] * scaler
+		-- if i == self.length/2 then
+			-- print("normalized: "..self.data[i])
+		-- end
+	-- end
 
+	for i=0,self.length-1,1 do
+		self.data[i],expo = math.frexp(self.data[i])
+		self.data[i] = (self.data[i]*scaler)
+		self.data[i] = math.ldexp(self.data[i],expo)
+		-- if i == self.length/2 then
+			-- print("normalized: "..self.data[i].." expo: "..expo)
+		-- end
+	end
 end
 
 function FloatMap:GenerateNoise()
@@ -4790,6 +4967,8 @@ function FloatMap:FindThresholdFromPercent(percent, greaterThan, excludeZeros)
 	table.sort(mapList, function (a,b) return a < b end)
 	local threshIndex = math.floor((#mapList * percentage)/100)
 
+	log:Debug("threshIndex %s = math.floor((%s * %s)/100)", threshIndex, #mapList, percentage)
+	
 	return mapList[threshIndex - 1]
 
 end
@@ -6053,6 +6232,7 @@ function RiverMap:SiltifyLakes()
 
 	--if debugTime then print(string.format("sea level = %f",self.elevationMap.seaLevelThreshold)) end
 
+	--[[
 	local belowSeaLevelCount = 0
 	local riverTest = FloatMap:New(self.elevationMap.width,self.elevationMap.height,self.elevationMap.xWrap,self.elevationMap.yWrap)
 	local lakesFound = false
@@ -6088,6 +6268,7 @@ function RiverMap:SiltifyLakes()
 	if lakesFound then
 		--error("Failed to siltify lakes. check logs")
 	end
+	--]]
 	--riverTest:Normalize()
 --	riverTest:Save("riverTest.csv")
 end
@@ -6275,6 +6456,7 @@ end
 -- Override AssignStartingPlots functions
 --
 
+if overrideAssignStartingPlots then
 ------------------------------------------------------------------------------
 function AssignStartingPlots:__CustomInit()
 	-- This function included to provide a quick and easy override for changing 
@@ -7105,6 +7287,7 @@ function AssignStartingPlots:AdjustTiles()
 			
 			if plot:IsHills() and featureType == FeatureTypes.FEATURE_JUNGLE then
 				plot:SetTerrainType(TerrainTypes.TERRAIN_GRASS, false, true)
+				Game.SetPlotExtraYield( x, y, YieldTypes.YIELD_FOOD, -1)
 			end
 			
 			BuffDeserts(plot)
@@ -7416,7 +7599,7 @@ function AssignStartingPlots:GetMajorStrategicResourceQuantityValues()
 	-- Note: scripts that cannot place Oil in the sea need to increase amounts on land to compensate.
 	-- Also recieves a random factor from 0 to self.resource_setting
 	
-	local uran_amt, horse_amt, oil_amt, iron_amt, coal_amt, alum_amt = 1, 2, 2, 2, 2, 3;
+	local uran_amt, horse_amt, oil_amt, iron_amt, coal_amt, alum_amt = 2, 2, 2, 2, 2, 3;
 	-- Check the resource setting.
 	if self.resource_setting == 1 then -- Sparse
 		uran_amt, horse_amt, oil_amt, iron_amt, coal_amt, alum_amt = 1, 2, 2, 2, 2, 2;
@@ -8261,10 +8444,12 @@ function AssignStartingPlots:BalanceAndAssign()
 			iNumCoastalCivs = iNumCoastalCivs + 1;
 			iNumCoastalCivsRemaining = iNumCoastalCivsRemaining + 1;
 			table.insert(civs_needing_coastal_start, playerNum);
-			local bPlaceFirst = CivNeedsPlaceFirstCoastalStart(civType);
-			if bPlaceFirst then
-				--print("- - - - - - - needs to Place First!"); --print("-");
-				table.insert(civs_priority_coastal_start, playerNum);
+			if CivNeedsPlaceFirstCoastalStart then
+				local bPlaceFirst = CivNeedsPlaceFirstCoastalStart(civType);
+				if bPlaceFirst then
+					--print("- - - - - - - needs to Place First!"); --print("-");
+					table.insert(civs_priority_coastal_start, playerNum);
+				end
 			end
 		else
 			local bNeedsRiverStart = CivNeedsRiverStart(civType)
@@ -8816,7 +9001,7 @@ function AssignStartingPlots:BalanceAndAssign()
 	--	
 end
 ------------------------------------------------------------------------------
-
+end
 
 
 
