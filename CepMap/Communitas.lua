@@ -30,10 +30,23 @@ include("FLuaVector")
 
 MapGlobals = {}
 
-local overrideAssignStartingPlots = true
+
 local debugTime = false
-local debugPrint = true
-local debugWithLogger = true
+local debugPrint = false
+local debugWithLogger = false
+
+--[[
+Setting "overrideAssignStartingPlots = false" may help make the map compatible 
+with core game patches in the distant future when I'm no longer modding Civ 5.
+
+This disables some advanced features of the map, so it's better to
+modify the map's changes to AssignStartingPlots if possible.
+
+~ Thalassicus @ Nov 5 2013
+--]]
+local overrideAssignStartingPlots = true
+
+
 
 
 
@@ -56,7 +69,7 @@ function MapGlobals:New()
 	--Top and bottom map latitudes.
 	mglobal.topLatitude				= 70
 	mglobal.bottomLatitude			= -70
-
+	
 	
 	--Important latitude markers used for generating climate.
 	mglobal.tropicLatitudes			= 20	--    			   tropicLatitudes to 0 : grass, jungle
@@ -113,7 +126,8 @@ function MapGlobals:New()
 	mglobal.tundraTemperature		= 0.35 -- tundra: 		snowTemperature to tundraTemperature
 	mglobal.snowTemperature			= 0.20 -- snow:   					  0 to snowTemperature
 	mglobal.treesMinTemperature		= 0.20 -- trees:	treesMinTemperature to 1
-	mglobal.forestRandomPercent		= 0.05 -- Percent of barren flatland which randomly create a forest
+	mglobal.forestRandomPercent		= 0.05 -- Percent of barren flatland which randomly gets a forest
+	mglobal.forestTundraPercent		= 0.25 -- Percent of barren tundra   which randomly gets a forest
 	
 	
 
@@ -520,23 +534,23 @@ end
 function GetMapInitData(worldSize)
 	print("GetMapInitData")
 	local worldsizes = {
-		[GameInfo.Worlds.WORLDSIZE_DUEL.ID] = {40, 24},
-		[GameInfo.Worlds.WORLDSIZE_TINY.ID] = {56, 36},
-		[GameInfo.Worlds.WORLDSIZE_SMALL.ID] = {66, 42},
-		[GameInfo.Worlds.WORLDSIZE_STANDARD.ID] = {80, 52},
-		[GameInfo.Worlds.WORLDSIZE_LARGE.ID] = {104, 64},
-		[GameInfo.Worlds.WORLDSIZE_HUGE.ID] = {128, 80}
+		[GameInfo.Worlds.WORLDSIZE_DUEL.ID] = {38, 26},
+		[GameInfo.Worlds.WORLDSIZE_TINY.ID] = {54, 36},
+		[GameInfo.Worlds.WORLDSIZE_SMALL.ID] = {66, 44},
+		[GameInfo.Worlds.WORLDSIZE_STANDARD.ID] = {76, 50},
+		[GameInfo.Worlds.WORLDSIZE_LARGE.ID] = {84, 56},
+		[GameInfo.Worlds.WORLDSIZE_HUGE.ID] = {92, 62}
 		}
-	--
+		
 	if Map.GetCustomOption(6) == 2 then
-		-- Enlarge terra-style maps 20% to create expansion room on the new world
+		-- Enlarge terra-style maps 30% to create expansion room on the new world
 		worldsizes = {
-		[GameInfo.Worlds.WORLDSIZE_DUEL.ID] = {44, 26},
-		[GameInfo.Worlds.WORLDSIZE_TINY.ID] = {62, 40},
-		[GameInfo.Worlds.WORLDSIZE_SMALL.ID] = {74, 46},
-		[GameInfo.Worlds.WORLDSIZE_STANDARD.ID] = {88, 58},
-		[GameInfo.Worlds.WORLDSIZE_LARGE.ID] = {114, 70},
-		[GameInfo.Worlds.WORLDSIZE_HUGE.ID] = {142, 88},
+		[GameInfo.Worlds.WORLDSIZE_DUEL.ID] = {44, 28},
+		[GameInfo.Worlds.WORLDSIZE_TINY.ID] = {60, 40},
+		[GameInfo.Worlds.WORLDSIZE_SMALL.ID] = {74, 50},
+		[GameInfo.Worlds.WORLDSIZE_STANDARD.ID] = {86, 58},
+		[GameInfo.Worlds.WORLDSIZE_LARGE.ID] = {96, 64},
+		[GameInfo.Worlds.WORLDSIZE_HUGE.ID] = {106, 70}
 		}
 	end
 	--
@@ -2962,10 +2976,11 @@ function IsGoodExtraForestTile(plot)
 	end
 	
 	if terrainID == TerrainTypes.TERRAIN_TUNDRA then
-		if plot:IsFreshWater() or resID ~= -1 then
-			odds = odds + 0.20
-		else
-			--odds = odds + 0.10
+		if resID ~= -1 then
+			return true
+		end
+		if plot:IsFreshWater() then
+			odds = odds + mg.featureWetVariance
 		end
 	end
 	
@@ -2980,12 +2995,16 @@ function IsGoodExtraForestTile(plot)
 		
 		if nearPlot:IsMountain() then
 			-- do nothing
-		elseif nearTerrainID == TerrainTypes.TERRAIN_SNOW then
-			-- Help extreme polar regions
-			odds = odds + 0.05
 		elseif nearPlot:IsHills() then
 			-- Region already has enough production and rough terrain
 			odds = odds - 0.10
+		elseif nearTerrainID == TerrainTypes.TERRAIN_SNOW then
+			-- Help extreme polar regions
+			odds = odds + 0.2
+		elseif nearTerrainID == TerrainTypes.TERRAIN_TUNDRA then
+			odds = odds + 0.1
+		elseif terrainID == TerrainTypes.TERRAIN_TUNDRA and Plot_IsWater(nearPlot) then
+			odds = odds + 0.1
 		end	
 		
 		-- Avoid tropics
@@ -5711,146 +5730,6 @@ function Plot_SetRiver(plot, edgeDirection, flowDirection)
 	--plot:SetFeatureType(FeatureTypes.FEATURE_ICE, -1)
 	return true
 end
-
---[[
-function FixRivers()
-	-- No artwork was created for an alluvial fan, so we need to fix the rivers.
-	-- http://wiki.2kgames.com/civ5/index.php/River_system_overview
-	
-	print("FixRivers")
-	--temptest
-	
-	-- Remove all rivers bordering lakes or oceans
-	for _, plot in Plots() do
-		if Plot_IsWater(plot) then
-			for edgeDirection = 0, DirectionTypes.NUM_DIRECTION_TYPES - 1 do
-				Plot_SetRiver(plot, edgeDirection, mg.flowNONE)
-			end
-		end
-	end
-	
-	-- Calculate outflow from lakes
-	local riversToAdd = {}
-	local lakesDone = {}
-	for plotID, plot in Plots(Shuffle) do
-		for edgeDirection = 0, DirectionTypes.NUM_DIRECTION_TYPES - 1 do
-			if Plot_IsRiver(plot, edgeDirection) then
-				prevPlot, edgeA, edgeB, flowA, flowB = Plot_GetPreviousRiverPlot(plot, edgeDirection)
-				if prevPlot and Plot_IsLake(prevPlot) and not Contains(lakesDone, prevPlot) then
-					print(string.format(
-						"%2s flowing river: add edge %2s flowing %2s, edge %2s flowing %2s", 
-						mg.flowNames[Plot_GetRiverFlowDirection(plot, edgeDirection)],
-						mg.directionNames[edgeA],
-						mg.flowNames[flowA],
-						mg.directionNames[edgeB],
-						mg.flowNames[flowB]
-					))
-					table.insert(riversToAdd, {plot=prevPlot, edge=edgeA, flow=flowA})
-					table.insert(riversToAdd, {plot=prevPlot, edge=edgeB, flow=flowB})
-					table.insert(lakesDone, prevPlot)
-				end
-			end
-		end
-	end
-	
-	for _, v in pairs(riversToAdd) do
-		v.plot:SetFeatureType(FeatureTypes.FEATURE_ICE, -1)
-		--Plot_SetRiver(v.plot, v.edge, v.flow)
-	end
-end
---]]
-
-function Plot_IsRiverOkay(plot, edgeDirection)
-	-- There is no artwork for an alluvial fan, so rivers should not end on land tiles.
-	
-	if not Plot_IsRiver(plot, edgeDirection) then
-		return true -- No river
-	end
-	
-	local plotOverEdge = Map.PlotDirection(plot:GetX(), plot:GetY(), edgeDirection)	
-	if not plotOverEdge then
-		print("River on map edge")
-		return true
-	end
-	
-	-- This quick fix is not ideal, but works
-	local isOcean = Plot_IsWater(plot)
-	local isOceanNear = Plot_IsWater(plotOverEdge)
-	if isOcean or isOceanNear then
-		--print("River with an ocean edge")
-		--return false
-	end
-	
-	if isOcean and isOceanNear then
-		print("River surrounded by ocean")
-		return false
-	end
-	
-	if isOcean then
-		local flowDir = Plot_GetRiverRotation(plot, edgeDirection)
-		if Plot_IsRiver(plot, (edgeDirection + flowDir) % 6) then
-			print(string.format("River spirals %s around ocean tile", (flowDir == 1) and "clockwise" or "counterclockwise"))
-			
-			--temptest
-			--plot:SetFeatureType(FeatureTypes.FEATURE_ICE, -1)
-			return false
-		end
-	end
-	
-	local nextPlot = Plot_GetNextRiverPlot(plot, edgeDirection)
-	if not nextPlot then
-		print("River leads off map edge")
-		return true
-	elseif Plot_IsWater(nextPlot) then
-		if isOcean or isOceanNear then
-			print("River with one ocean edge empties into ocean.")
-			return false
-		end
-		--print("River between two land tiles empties into ocean.")
-		return true
-	end
-	
-	--[[
-	local prevPlot = Plot_GetPreviousRiverPlot(plot, edgeDirection)
-	if not prevPlot then
-		return true -- River starts on map edge
-	elseif prevPlot:GetPlotType() ~= PlotTypes.PLOT_OCEAN then
-		if isOcean or isOceanNear then
-			return false -- River with one ocean edge starts on land
-		end
-		return true -- River between two land tiles starts at ocean.
-	end
-	--]]
-	
-	-- Does next plot continue the river?
-	if Plot_IsRiverContinued(plot, edgeDirection) then
-		return true -- River continues to a land tile
-	end
-	
-	print("River empties into land")
-	return false
-	--]=]
-end
-
-function Plot_IsRiverContinued(plot, edgeDirection)
-	local nextPlot = Plot_GetNextRiverPlot(plot, edgeDirection)
-	local flowDirection = Plot_GetRiverFlowDirection(plot, edgeDirection)
-	
-	if not nextPlot then
-		print("P_IRC: River flows off map edge")
-		return false
-	end
-	if not flowDirection then
-		print("P_IRC: River does not exist")
-		return false
-	end
-	
-	local nextEdgeA, nextEdgeB = Plot_GetRiverEdgesFromInflow(nextPlot, flowDirection)
-	
-	return PlotIsRiver(nextPlot, nextEdgeA) or PlotIsRiver(nextPlot, nextEdgeB)
-	--]=]
-end
-
 
 RiverMap = inheritsFrom(nil)
 
