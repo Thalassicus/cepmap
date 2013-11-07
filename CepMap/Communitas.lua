@@ -1371,9 +1371,9 @@ end
 function GenerateTerrain()
 	print("Generating terrain - CommunitasMap")
 	local timeStart = debugTime and os.clock() or 0
-	local terrainDesert	= GameInfoTypes["TERRAIN_DESERT"]
-	local terrainPlains	= GameInfoTypes["TERRAIN_PLAINS"]
-	local terrainSnow	= GameInfoTypes["TERRAIN_SNOW"]
+	local TerrainTypes.TERRAIN_DESERT	= GameInfoTypes["TERRAIN_DESERT"]
+	local TerrainTypes.TERRAIN_PLAINS	= GameInfoTypes["TERRAIN_PLAINS"]
+	local TerrainTypes.TERRAIN_SNOW	= GameInfoTypes["TERRAIN_SNOW"]
 	local terrainTundra	= GameInfoTypes["TERRAIN_TUNDRA"]
 	local terrainGrass	= GameInfoTypes["TERRAIN_GRASS"]
 
@@ -1402,33 +1402,33 @@ function GenerateTerrain()
 			if not elevationMap:IsBelowSeaLevel(x,y) then
 				if rainfallMap.data[i] < desertThreshold then
 					if temperatureMap.data[i] < mg.snowTemperature then--and elevationMap:GetZone(y) ~= mg.NEQUATOR and elevationMap:GetZone(y) ~= mg.SEQUATOR then
-						plot:SetTerrainType(terrainSnow,false,false)
+						plot:SetTerrainType(TerrainTypes.TERRAIN_SNOW,false,false)
 					elseif temperatureMap.data[i] < mg.tundraTemperature then
 						plot:SetTerrainType(terrainTundra,false,false)
 					elseif temperatureMap.data[i] < mg.desertMinTemperature then
-						plot:SetTerrainType(terrainPlains,false,false)
+						plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS,false,false)
 					else
 						--if rainfallMap.data[i] < (PWRand() * (desertThreshold - minRain) + desertThreshold - minRain)/2.0 + minRain then
-						plot:SetTerrainType(terrainDesert,false,false)
+						plot:SetTerrainType(TerrainTypes.TERRAIN_DESERT,false,false)
 						--else
-							--plot:SetTerrainType(terrainPlains,false,false)
+							--plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS,false,false)
 						--end
 					end
 				elseif rainfallMap.data[i] < plainsThreshold then
 					if temperatureMap.data[i] < mg.snowTemperature then--and elevationMap:GetZone(y) ~= mg.NEQUATOR and elevationMap:GetZone(y) ~= mg.SEQUATOR then
-						plot:SetTerrainType(terrainSnow,false,false)
+						plot:SetTerrainType(TerrainTypes.TERRAIN_SNOW,false,false)
 					elseif temperatureMap.data[i] < mg.tundraTemperature then
 						plot:SetTerrainType(terrainTundra,false,false)
 					else
 						if rainfallMap.data[i] < (PWRand() * (plainsThreshold - desertThreshold) + plainsThreshold - desertThreshold)/2.0 + desertThreshold then
-							plot:SetTerrainType(terrainPlains,false,false)
+							plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS,false,false)
 						else
 							plot:SetTerrainType(terrainGrass,false,false)
 						end
 					end
 				else
 					if temperatureMap.data[i] < mg.snowTemperature then--and elevationMap:GetZone(y) ~= mg.NEQUATOR and elevationMap:GetZone(y) ~= mg.SEQUATOR then
-						plot:SetTerrainType(terrainSnow,false,false)
+						plot:SetTerrainType(TerrainTypes.TERRAIN_SNOW,false,false)
 					elseif temperatureMap.data[i] < mg.tundraTemperature then
 						plot:SetTerrainType(terrainTundra,false,false)
 					else
@@ -2773,16 +2773,6 @@ function Plot_AddMainFeatures(plot, zeroTreesThreshold, jungleThreshold)
 	local x, y					= plot:GetX(), plot:GetY()
 	local i						= elevationMap:GetIndex(x,y)
 	local mapW, mapH			= Map.GetGridSize()
-	local terrainPlains			= TerrainTypes.TERRAIN_PLAINS
-	local terrainDesert			= TerrainTypes.TERRAIN_DESERT
-	local terrainSnow			= TerrainTypes.TERRAIN_SNOW
-	local terrainGrass 			= TerrainTypes.TERRAIN_GRASS
-	local featureFlood			= FeatureTypes.FEATURE_FLOOD_PLAINS
-	local featureIce			= FeatureTypes.FEATURE_ICE
-	local featureJungle			= FeatureTypes.FEATURE_JUNGLE
-	local featureForest			= FeatureTypes.FEATURE_FOREST
-	local featureOasis			= FeatureTypes.FEATURE_OASIS
-	local featureMarsh			= FeatureTypes.FEATURE_MARSH
 	--local zeroTreesThreshold	= rainfallMap:FindThresholdFromPercent(mg.zeroTreesPercent,false,true)
 	--local jungleThreshold		= rainfallMap:FindThresholdFromPercent(mg.junglePercent,false,true)
 	
@@ -2791,22 +2781,22 @@ function Plot_AddMainFeatures(plot, zeroTreesThreshold, jungleThreshold)
 	end
 	
 	-- Set desert rivers to floodplains
-	if plot:CanHaveFeature(featureFlood) then
-		plot:SetFeatureType(featureFlood,-1)
+	if plot:CanHaveFeature(FeatureTypes.FEATURE_FLOOD_PLAINS) then
+		plot:SetFeatureType(FeatureTypes.FEATURE_FLOOD_PLAINS,-1)
 		return
 	end
 	
 	-- Micro-climates for tiny volcanic islands 
-	if not plot:IsMountain() and (plotTerrainID == terrainPlains or plotTerrainID == terrainGrass) then
+	if not plot:IsMountain() and (plotTerrainID == TerrainTypes.TERRAIN_PLAINS or plotTerrainID == TerrainTypes.TERRAIN_GRASS) then
 		local areaSize = plot:Area():GetNumTiles()
 		if areaSize <= 5 and (6 - areaSize) >= Map.Rand(5, "Add Island Features - Lua") then
 			local zone = elevationMap:GetZone(y)
 			if zone == mg.NEQUATOR or zone == mg.SEQUATOR then
-				plot:SetTerrainType(terrainPlains,false,false)
-				plot:SetFeatureType(featureJungle,-1)
+				plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS,false,false)
+				plot:SetFeatureType(FeatureTypes.FEATURE_JUNGLE,-1)
 				return
 			elseif zone == mg.NTEMPERATE or zone == mg.STEMPERATE then
-				plot:SetFeatureType(featureForest,-1)
+				plot:SetFeatureType(FeatureTypes.FEATURE_FOREST,-1)
 				return
 			end
 		end
@@ -2818,7 +2808,7 @@ function Plot_AddMainFeatures(plot, zeroTreesThreshold, jungleThreshold)
 		local treeRange = jungleThreshold - zeroTreesThreshold
 		if (rainfallMap.data[i] > PWRand() * treeRange + zeroTreesThreshold) and (temperatureMap.data[i] > mg.treesMinTemperature) then
 			if IsGoodFeaturePlot(plot) then
-				plot:SetFeatureType(featureForest,-1)
+				plot:SetFeatureType(FeatureTypes.FEATURE_FOREST,-1)
 			end
 		end
 		return
@@ -2827,14 +2817,14 @@ function Plot_AddMainFeatures(plot, zeroTreesThreshold, jungleThreshold)
 	-- Too cold for jungle
 	if temperatureMap.data[i] < mg.jungleMinTemperature then
 		if temperatureMap.data[i] > mg.treesMinTemperature and IsGoodFeaturePlot(plot) then
-			plot:SetFeatureType(featureForest,-1)
+			plot:SetFeatureType(FeatureTypes.FEATURE_FOREST,-1)
 		end
 		return
 	end	
 	
 	-- Too near desert for jungle
 	for nearPlot in Plot_GetPlotsInCircle(plot, 1) do
-		if nearPlot:GetTerrainType() == terrainDesert then
+		if nearPlot:GetTerrainType() == TerrainTypes.TERRAIN_DESERT then
 			return
 		end
 	end
@@ -2843,9 +2833,9 @@ function Plot_AddMainFeatures(plot, zeroTreesThreshold, jungleThreshold)
 	table.insert(mg.tropicalPlots, plot)
 	
 	-- Check marsh
-	if temperatureMap.data[i] > mg.treesMinTemperature and IsGoodFeaturePlot(plot, featureMarsh) then
+	if temperatureMap.data[i] > mg.treesMinTemperature and IsGoodFeaturePlot(plot, FeatureTypes.FEATURE_MARSH) then
 		plot:SetPlotType(PlotTypes.PLOT_LAND,false,false)
-		plot:SetFeatureType(featureMarsh,-1)
+		plot:SetFeatureType(FeatureTypes.FEATURE_MARSH,-1)
 		return
 	end
 	
@@ -2854,21 +2844,21 @@ function Plot_AddMainFeatures(plot, zeroTreesThreshold, jungleThreshold)
 		--jungle on hill looks terrible in Civ5. Can't use it.
 		plot:SetTerrainType(terrainGrass,false,false)
 		if IsGoodFeaturePlot(plot) then
-			plot:SetFeatureType(featureForest,-1)
+			plot:SetFeatureType(FeatureTypes.FEATURE_FOREST,-1)
 		end
 		return
 	end
 	--]]
 	
 	if IsGoodFeaturePlot(plot) then
-		plot:SetFeatureType(featureJungle,-1)
+		plot:SetFeatureType(FeatureTypes.FEATURE_JUNGLE,-1)
 		if plot:IsHills() then
-			plot:SetTerrainType(terrainGrass,false,false)
+			plot:SetTerrainType(TerrainTypes.TERRAIN_GRASS,false,false)
 		else
-			plot:SetTerrainType(terrainPlains,false,false)
+			plot:SetTerrainType(TerrainTypes.TERRAIN_PLAINS,false,false)
 		end
 	else
-		plot:SetTerrainType(terrainGrass,false,false)
+		plot:SetTerrainType(TerrainTypes.TERRAIN_GRASS,false,false)
 	end
 end
 
@@ -4285,9 +4275,9 @@ function jungleMatch(x,y)
 end
 
 function desertMatch(x,y)
-	local terrainDesert	= GameInfoTypes["TERRAIN_DESERT"]
+	local TerrainTypes.TERRAIN_DESERT	= GameInfoTypes["TERRAIN_DESERT"]
 	local plot = Map.GetPlot(x,y)
-	if plot:GetTerrainType() == terrainDesert then
+	if plot:GetTerrainType() == TerrainTypes.TERRAIN_DESERT then
 		return true
 	--include any mountains on the border as part of the desert.
 	elseif IsMountain(plot) then
@@ -4298,7 +4288,7 @@ function desertMatch(x,y)
 			local ii = elevationMap:GetIndex(xx,yy)
 			if 11 ~= -1 then
 				local nPlot = Map.GetPlot(xx,yy)
-				if not IsMountain(nPlot) and nPlot:GetTerrainType() == terrainDesert then
+				if not IsMountain(nPlot) and nPlot:GetTerrainType() == TerrainTypes.TERRAIN_DESERT then
 					return true
 				end
 			end
