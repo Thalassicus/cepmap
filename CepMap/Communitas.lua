@@ -2177,7 +2177,7 @@ function BlendTerrain()
 			--
 		else
 			local plotTerrainID = plot:GetTerrainType()
-			local plotFeatureID = plot:GetTerrainType()
+			local plotFeatureID = plot:GetFeatureType()
 			local plotPercent = Plot_GetCirclePercents(plot, 1, mg.terrainBlendRange)
 			local randPercent = 1 + PWRand() * 2 * mg.terrainBlendRandom - mg.terrainBlendRandom
 			
@@ -2790,6 +2790,7 @@ function Plot_AddMainFeatures(plot, zeroTreesThreshold, jungleThreshold)
 	local terrainPlains			= TerrainTypes.TERRAIN_PLAINS
 	local terrainDesert			= TerrainTypes.TERRAIN_DESERT
 	local terrainSnow			= TerrainTypes.TERRAIN_SNOW
+	local terrainGrass 			= TerrainTypes.TERRAIN_GRASS
 	local featureFlood			= FeatureTypes.FEATURE_FLOOD_PLAINS
 	local featureIce			= FeatureTypes.FEATURE_ICE
 	local featureJungle			= FeatureTypes.FEATURE_JUNGLE
