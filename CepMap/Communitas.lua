@@ -2784,6 +2784,7 @@ function Plot_AddMainFeatures(plot, zeroTreesThreshold, jungleThreshold)
 	local x, y					= plot:GetX(), plot:GetY()
 	local i						= elevationMap:GetIndex(x,y)
 	local mapW, mapH			= Map.GetGridSize()
+	local plotTerrainID 		= plot:GetTerrainType()
 	--local zeroTreesThreshold	= rainfallMap:FindThresholdFromPercent(mg.zeroTreesPercent,false,true)
 	--local jungleThreshold		= rainfallMap:FindThresholdFromPercent(mg.junglePercent,false,true)
 	
@@ -2814,7 +2815,7 @@ function Plot_AddMainFeatures(plot, zeroTreesThreshold, jungleThreshold)
 	end
 	
 	-- Too dry for jungle
-	local plotTerrainID = plot:GetTerrainType()
+
 	if rainfallMap.data[i] < jungleThreshold then
 		local treeRange = jungleThreshold - zeroTreesThreshold
 		if (rainfallMap.data[i] > PWRand() * treeRange + zeroTreesThreshold) and (temperatureMap.data[i] > mg.treesMinTemperature) then
