@@ -1385,9 +1385,6 @@ end
 function GenerateTerrain()
 	print("Generating terrain - CommunitasMap")
 	local timeStart = debugTime and os.clock() or 0
-	local TerrainTypes.TERRAIN_DESERT	= GameInfoTypes["TERRAIN_DESERT"]
-	local TerrainTypes.TERRAIN_PLAINS	= GameInfoTypes["TERRAIN_PLAINS"]
-	local TerrainTypes.TERRAIN_SNOW	= GameInfoTypes["TERRAIN_SNOW"]
 	local terrainTundra	= GameInfoTypes["TERRAIN_TUNDRA"]
 	local terrainGrass	= GameInfoTypes["TERRAIN_GRASS"]
 
@@ -4271,12 +4268,11 @@ function oceanMatch(x,y)
 end
 
 function jungleMatch(x,y)
-	local terrainGrass	= GameInfoTypes["TERRAIN_GRASS"]
 	local plot = Map.GetPlot(x,y)
 	if plot:GetFeatureType() == FeatureTypes.FEATURE_JUNGLE or Contains(mg.tropicalPlots, plot) then
 		return true
 	--include any mountains on the border as part of the desert.
-	elseif (plot:GetFeatureType() == FeatureTypes.FEATURE_MARSH or plot:GetFeatureType() == FeatureTypes.FEATURE_FOREST) and plot:GetTerrainType() == terrainGrass then
+	elseif (plot:GetFeatureType() == FeatureTypes.FEATURE_MARSH or plot:GetFeatureType() == FeatureTypes.FEATURE_FOREST) and plot:GetTerrainType() == TerrainTypes.TERRAIN_GRASS then
 		local nList = elevationMap:GetRadiusAroundHex(x,y,1)
 		for n=1,#nList do
 			local xx = nList[n][1]
@@ -4294,7 +4290,6 @@ function jungleMatch(x,y)
 end
 
 function desertMatch(x,y)
-	local TerrainTypes.TERRAIN_DESERT	= GameInfoTypes["TERRAIN_DESERT"]
 	local plot = Map.GetPlot(x,y)
 	if plot:GetTerrainType() == TerrainTypes.TERRAIN_DESERT then
 		return true
